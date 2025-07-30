@@ -17,13 +17,13 @@
 mono_crash.*
 
 # Build results
-[Dd]ebug/
+#[Dd]ebug/
 [Dd]ebugPublic/
-[Rr]elease/
+#[Rr]elease/
 [Rr]eleases/
-x64/
-x86/
-[Ww][Ii][Nn]32/
+#x64/
+#x86/
+#[Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
@@ -399,3 +399,18 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+projects/vs2022/version/x64/Release/version.dll.recipe
+projects/vs2022/version/x64/Release/version.vcxproj.FileListAbsolute.txt
+projects/vs2022/version/Win32/Release/version.vcxproj.FileListAbsolute.txt
+projects/vs2022/version/Win32/Debug/version.vcxproj.FileListAbsolute.txt
+projects/vs2022/version/Win32/Debug/version.dll.recipe
+projects/vs2022/test/Debug/test.exe.recipe
+projects/vs2022/test/Debug/test.vcxproj.FileListAbsolute.txt
+projects/vs2022/test/Release/test.exe.recipe
+projects/vs2022/test/Win32/Debug/test.exe.recipe
+projects/vs2022/test/Win32/Debug/vc142.idb
+projects/vs2022/test/Win32/Release/test.exe.recipe
+projects/vs2022/test/x64/Release/test.exe.recipe
+projects/vs2022/test/x64/Release/test.vcxproj.FileListAbsolute.txt
+projects/vs2022/version/Win32/Debug/vc142.idb
+projects/vs2022/version/Win32/Release/version.dll.recipe
