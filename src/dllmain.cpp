@@ -6,6 +6,7 @@
 #include "plugin.hpp"
 #include "minhook_api.hpp"
 #include <mutex>            // std::{once_flag, call_once}
+#include<tchar.h>
 
 namespace {
     bool isWin64() {
@@ -52,6 +53,199 @@ namespace {
 namespace {
     DllType dllType = DllType::Unknown;
 
+    void PrintPrivileges() {
+        HANDLE hToken;
+        DWORD dwSize;
+
+        // 1. 打开当前进程的访问令牌
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+            DEBUG_TRACE("OpenProcessToken 失败! 错误: %d\n", GetLastError());
+            return;
+        }
+
+        // 2. 获取令牌信息大小
+        if (!GetTokenInformation(hToken, TokenPrivileges, NULL, 0, &dwSize)) {
+            DWORD dwError = GetLastError();
+            if (dwError != ERROR_INSUFFICIENT_BUFFER) {
+                DEBUG_TRACE("GetTokenInformation 失败! 错误: %d\n", dwError);
+                CloseHandle(hToken);
+                return;
+            }
+        }
+
+        // 3. 分配内存并获取特权信息
+        PTOKEN_PRIVILEGES pTokenPrivileges = (PTOKEN_PRIVILEGES)malloc(dwSize);
+        if (!pTokenPrivileges) {
+            DEBUG_TRACE("内存分配失败!\n");
+            CloseHandle(hToken);
+            return;
+        }
+
+        if (!GetTokenInformation(hToken, TokenPrivileges, pTokenPrivileges, dwSize, &dwSize)) {
+            DEBUG_TRACE("GetTokenInformation 失败! 错误: %d\n", GetLastError());
+            free(pTokenPrivileges);
+            CloseHandle(hToken);
+            return;
+        }
+
+        // 4. 枚举所有特权
+        DEBUG_TRACE("当前进程特权列表 (%d 项):\n", pTokenPrivileges->PrivilegeCount);
+        DEBUG_TRACE("==================================================\n");
+        DEBUG_TRACE("%-40s %s\n", "特权名称", "状态");
+        DEBUG_TRACE("--------------------------------------------------\n");
+
+        for (DWORD i = 0; i < pTokenPrivileges->PrivilegeCount; i++) {
+            LUID_AND_ATTRIBUTES la = pTokenPrivileges->Privileges[i];
+            TCHAR szPrivilegeName[256];
+            DWORD dwNameLen = sizeof(szPrivilegeName) / sizeof(TCHAR);
+
+            // 5. 将LUID转换为特权名称
+            if (LookupPrivilegeName(NULL, &la.Luid, szPrivilegeName, &dwNameLen)) {
+                // 6. 确定特权状态
+                LPCSTR status = "未知";
+                if (la.Attributes & SE_PRIVILEGE_ENABLED) {
+                    status = "已启用";
+                }
+                else if (la.Attributes & SE_PRIVILEGE_ENABLED_BY_DEFAULT) {
+                    status = "默认启用";
+                }
+                else if (la.Attributes == 0) {
+                    status = "已禁用";
+                }
+                else if (la.Attributes & SE_PRIVILEGE_REMOVED) {
+                    status = "已移除";
+                }
+
+                // 7. 输出特权信息
+                DEBUG_TRACE(L"%-40s %s\n", szPrivilegeName, status);
+            }
+            else {
+                DEBUG_TRACE(L"特权 LUID: %08x:%08x (无法获取名称)\n",
+                    la.Luid.HighPart, la.Luid.LowPart);
+            }
+        }
+
+        DEBUG_TRACE("==================================================\n");
+
+        // 8. 清理资源
+        free(pTokenPrivileges);
+        CloseHandle(hToken);
+    }
+
+    // 启用指定特权
+    BOOL EnablePrivilege(LPCTSTR privilegeName) {
+        HANDLE hToken;
+        TOKEN_PRIVILEGES tokenPrivileges;
+        LUID luid;
+
+        // 1. 打开当前进程的访问令牌
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+            DEBUG_TRACE("打开进程令牌失败! 错误: %d\n", GetLastError());
+            return FALSE;
+        }
+
+        // 2. 查找特权的LUID
+        if (!LookupPrivilegeValue(NULL, privilegeName, &luid)) {
+            DEBUG_TRACE("查找特权值失败! 错误: %d\n", GetLastError());
+            CloseHandle(hToken);
+            return FALSE;
+        }
+
+        // 3. 设置特权结构
+        tokenPrivileges.PrivilegeCount = 1;
+        tokenPrivileges.Privileges[0].Luid = luid;
+        tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        // 4. 启用特权
+        if (!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
+            DEBUG_TRACE("调整令牌特权失败! 错误: %d\n", GetLastError());
+            CloseHandle(hToken);
+            return FALSE;
+        }
+
+        // 5. 检查操作结果
+        DWORD lastError = GetLastError();
+        if (lastError == ERROR_NOT_ALL_ASSIGNED) {
+            DEBUG_TRACE(L"警告: 特权 %s 未被完全分配\n", privilegeName);
+        }
+
+        CloseHandle(hToken);
+        return (lastError == ERROR_SUCCESS);
+    }
+
+    void GetBasePrivileges()
+    {
+        // 需要启用的特权列表
+        LPCTSTR requiredPrivileges[] = {
+            SE_DEBUG_NAME,           // 调试特权 (SeDebugPrivilege)
+            SE_ASSIGNPRIMARYTOKEN_NAME, // 分配主令牌 (SeAssignPrimaryTokenPrivilege)
+            SE_INCREASE_QUOTA_NAME,  // 增加配额 (SeIncreaseQuotaPrivilege)
+            SE_TCB_NAME,             // 作为操作系统的一部分 (SeTcbPrivilege)
+            NULL // 结束标记
+        };
+
+        // 尝试启用所有需要的特权
+        BOOL allPrivilegesEnabled = TRUE;
+        for (int i = 0; requiredPrivileges[i] != NULL; i++) {
+            if (EnablePrivilege(requiredPrivileges[i])) {
+                DEBUG_TRACE(L"已成功启用特权: %s\n", requiredPrivileges[i]);
+            }
+            else {
+                DEBUG_TRACE(L"无法启用特权: %s\n", requiredPrivileges[i]);
+                allPrivilegesEnabled = FALSE;
+            }
+        }
+    }
+
+    BOOL OpenCalc()
+    {
+        //  直接启动计算器
+        STARTUPINFO si = { sizeof(si) };
+        PROCESS_INFORMATION pi;
+        TCHAR calcPath[MAX_PATH];
+
+        // 禁用文件系统重定向（仅32位程序需要）
+        PVOID OldValue = NULL;
+        BOOL bRedirect = FALSE;
+        if (IsWow64Process(GetCurrentProcess(), &bRedirect) && bRedirect) {
+            Wow64DisableWow64FsRedirection(&OldValue);
+        }
+
+        // 获取系统目录
+        if (GetSystemDirectory(calcPath, MAX_PATH) == 0) {
+            DEBUG_TRACE("错误：无法获取系统目录 (%lu)\n", GetLastError());
+            return FALSE;
+        }
+
+        wcscat_s(calcPath, L"\\calc.exe");
+
+        if (CreateProcess(
+            NULL,
+            calcPath,
+            NULL,
+            NULL,
+            FALSE,
+            0,
+            NULL,
+            NULL,
+            &si,
+            &pi)) {
+            DEBUG_TRACE("计算器已成功启动！\n");
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+        else {
+            DEBUG_TRACE("错误：无法启动计算器 (%lu)\n", GetLastError());
+            return FALSE;
+        }
+
+        // 恢复文件系统重定向
+        if (OldValue) {
+            Wow64RevertWow64FsRedirection(OldValue);
+        }
+        return TRUE;
+    }
+
     void init(HMODULE hModule) {
         DEBUG_TRACE(L"init : begin");
         minhook_api::init();
@@ -92,7 +286,16 @@ namespace {
         loadGenuineDll(dllType, systemDirectory);
         plugin::loadPluginDlls();
         {
-            WinExec("calc.exe", SW_SHOW);
+            HANDLE handle1 = CreateFile(_T("C:\\1.txt"), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (handle1 != INVALID_HANDLE_VALUE) // 函数执行成功
+            {
+                MessageBox(NULL, _T("文件成功创建"), _T("提示"), MB_OK);
+            }
+            else
+            {
+                DEBUG_TRACE("错误：无法创建文件 (%lu)\n", GetLastError());
+                MessageBox(NULL, _T("文件没有成功创建"), _T("提示"), MB_OK);
+            }      
             //
             // *** You can put your own init code here ***
             //

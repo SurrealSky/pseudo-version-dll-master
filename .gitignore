@@ -414,3 +414,8 @@ projects/vs2022/test/x64/Release/test.exe.recipe
 projects/vs2022/test/x64/Release/test.vcxproj.FileListAbsolute.txt
 projects/vs2022/version/Win32/Debug/vc142.idb
 projects/vs2022/version/Win32/Release/version.dll.recipe
+projects/vs2022/test/x64/Debug/test.exe.recipe
+projects/vs2022/test/x64/Debug/vc142.idb
+projects/vs2022/version/x64/Debug/vc142.idb
+projects/vs2022/version/x64/Debug/version.dll.recipe
+projects/vs2022/version/x64/Debug/version.vcxproj.FileListAbsolute.txt
